@@ -273,26 +273,22 @@ class StatusBarController: NSObject, NSMenuDelegate {
             // Fat sparkle (wider inner radius for more body)
             let diamond = self.sparklePath(in: rect.insetBy(dx: 1, dy: 1), innerRatio: 0.65)
 
-            // Draw white diamond, then punch out the number
-            let str = "\(count)"
-            let fontSize: CGFloat = count < 10 ? 10 : 8
+            // Draw sparkle, then punch out the Roman numeral
+            let str = self.toRoman(count)
+            let fontSize: CGFloat
+            switch str.count {
+            case 1:    fontSize = 10
+            case 2:    fontSize = 9
+            case 3:    fontSize = 7.5
+            default:   fontSize = 6
+            }
             let font = NSFont.systemFont(ofSize: fontSize, weight: .heavy)
             let attrs: [NSAttributedString.Key: Any] = [.font: font]
             let attrStr = NSAttributedString(string: str, attributes: attrs)
             let textSize = attrStr.size()
-            // Per-digit nudge (horizontal, vertical)
-            let nudgeX: CGFloat
-            let nudgeY: CGFloat
-            switch count {
-            case 1:    nudgeX = -0.2;  nudgeY = 0
-            case 4:    nudgeX = -0.25; nudgeY = 0
-            case 2:    nudgeX = 0;     nudgeY = 0.2
-            case 7:    nudgeX = 0.375; nudgeY = -0.2
-            default:   nudgeX = 0;     nudgeY = 0
-            }
             let textOrigin = NSPoint(
-                x: (rect.width - textSize.width) / 2 + nudgeX,
-                y: (rect.height - font.capHeight) / 2 + nudgeY
+                x: (rect.width - textSize.width) / 2,
+                y: (rect.height - font.capHeight) / 2
             )
 
             // Create text path for cutout
@@ -348,6 +344,23 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
         path.close()
         return path
+    }
+
+    // MARK: - Roman Numerals
+
+    private func toRoman(_ number: Int) -> String {
+        let values = [(1000,"M"),(900,"CM"),(500,"D"),(400,"CD"),
+                      (100,"C"),(90,"XC"),(50,"L"),(40,"XL"),
+                      (10,"X"),(9,"IX"),(5,"V"),(4,"IV"),(1,"I")]
+        var result = ""
+        var n = number
+        for (value, numeral) in values {
+            while n >= value {
+                result += numeral
+                n -= value
+            }
+        }
+        return result
     }
 
     // MARK: - Menu Delegate
