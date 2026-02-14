@@ -117,8 +117,9 @@ def add_hook(event, command):
 add_hook("Stop", signal_cmd)
 add_hook("PermissionRequest", signal_cmd)
 
-# Clear attention when user submits a prompt or session ends
+# Clear attention when user submits a prompt, a tool executes (permission was granted), or session ends
 add_hook("UserPromptSubmit", clear_cmd)
+add_hook("PostToolUse", clear_cmd)
 add_hook("SessionEnd", clear_cmd)
 
 with open(settings_path, "w") as f:

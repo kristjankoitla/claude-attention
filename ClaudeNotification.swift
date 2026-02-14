@@ -156,6 +156,8 @@ class StatusBarController: NSObject, NSMenuDelegate {
     private func cleanup() {
         guard let files = try? FileManager.default.contentsOfDirectory(atPath: sessionDir) else { return }
         let fm = FileManager.default
+        let now = Date().timeIntervalSince1970
+        let staleThreshold: TimeInterval = 900 // 15 minutes
 
         for file in files where !file.hasPrefix(".") {
             let path = (sessionDir as NSString).appendingPathComponent(file)
@@ -167,13 +169,20 @@ class StatusBarController: NSObject, NSMenuDelegate {
                         try? fm.removeItem(atPath: path)
                         continue
                     }
+
+                    // Remove if session has been waiting too long
+                    if parts.count > 1, let timestamp = Double(parts[1]),
+                       now - timestamp > staleThreshold {
+                        try? fm.removeItem(atPath: path)
+                        continue
+                    }
                 }
             }
 
-            // Fallback: remove files older than 2 hours
+            // Fallback: remove files older than 15 minutes
             if let attrs = try? fm.attributesOfItem(atPath: path),
                let modDate = attrs[.modificationDate] as? Date,
-               Date().timeIntervalSince(modDate) > 7200 {
+               Date().timeIntervalSince(modDate) > staleThreshold {
                 try? fm.removeItem(atPath: path)
             }
         }
