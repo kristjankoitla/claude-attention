@@ -1,5 +1,10 @@
 #!/bin/bash
-set -e
+set -eu
+
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "Error: This tool requires macOS."
+    exit 1
+fi
 
 echo "Installing Claude Notification..."
 echo ""
@@ -22,6 +27,7 @@ INSTALL_DIR="$HOME/.claude-notification"
 BIN_DIR="$INSTALL_DIR/bin"
 SESSION_DIR="$INSTALL_DIR/sessions"
 HOOKS_DIR="$INSTALL_DIR/hooks"
+SCRIPTS_DIR="$INSTALL_DIR/scripts"
 PLIST_LABEL="com.claude.notification"
 PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 
@@ -32,20 +38,24 @@ xml_escape() {
 
 # 1. Create directories
 echo "[1/5] Creating directories..."
-mkdir -p "$BIN_DIR" "$HOOKS_DIR"
+mkdir -p "$BIN_DIR" "$HOOKS_DIR" "$SCRIPTS_DIR"
 mkdir -p -m 700 "$SESSION_DIR"
 
-# 2. Install hook scripts
+# 2. Install hook scripts and Python helpers
 echo "[2/5] Installing hook scripts..."
 cp "$SCRIPT_DIR/hooks/signal-attention.sh" "$HOOKS_DIR/signal-attention.sh"
 cp "$SCRIPT_DIR/hooks/clear-attention.sh" "$HOOKS_DIR/clear-attention.sh"
 chmod +x "$HOOKS_DIR/signal-attention.sh" "$HOOKS_DIR/clear-attention.sh"
+cp "$SCRIPT_DIR/scripts/configure_hooks.py" "$SCRIPTS_DIR/configure_hooks.py"
+cp "$SCRIPT_DIR/scripts/remove_hooks.py" "$SCRIPTS_DIR/remove_hooks.py"
 
 # 3. Compile Swift app
 echo "[3/5] Compiling menu bar app..."
 
 # Create temporary Info.plist to embed in binary
 TEMP_PLIST=$(mktemp)
+trap 'rm -f "$TEMP_PLIST"' EXIT
+
 cat > "$TEMP_PLIST" << 'INFOPLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -63,76 +73,24 @@ cat > "$TEMP_PLIST" << 'INFOPLIST'
 </plist>
 INFOPLIST
 
-swiftc -O -o "$BIN_DIR/claude-notification" "$SCRIPT_DIR/ClaudeNotification.swift" \
+if ! swiftc -O -o "$BIN_DIR/claude-notification" "$SCRIPT_DIR"/sources/*.swift \
     -framework AppKit \
-    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$TEMP_PLIST" 2>&1
-
-rm -f "$TEMP_PLIST"
+    -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker "$TEMP_PLIST" 2>&1; then
+    echo ""
+    echo "Error: Swift compilation failed. Check the output above for details."
+    exit 1
+fi
 
 # 4. Configure Claude Code hooks
 echo "[4/5] Configuring Claude Code hooks..."
-CLAUDE_SETTINGS="$HOME/.claude/settings.json"
 mkdir -p "$HOME/.claude"
-
-python3 << 'PYEOF'
-import json, os, sys
-
-settings_path = os.path.expanduser("~/.claude/settings.json")
-settings = {}
-if os.path.exists(settings_path):
-    with open(settings_path) as f:
-        try:
-            settings = json.load(f)
-        except json.JSONDecodeError:
-            print("  Warning: existing settings.json is invalid, backing up...")
-            import shutil
-            shutil.copy2(settings_path, settings_path + ".bak")
-            settings = {}
-
-hooks = settings.setdefault("hooks", {})
-home = os.path.expanduser("~")
-signal_cmd = f"{home}/.claude-notification/hooks/signal-attention.sh"
-clear_cmd = f"{home}/.claude-notification/hooks/clear-attention.sh"
-
-def hook_exists(event_hooks, command):
-    for group in event_hooks:
-        for h in group.get("hooks", []):
-            if h.get("command", "") == command:
-                return True
-    return False
-
-def add_hook(event, command):
-    event_hooks = hooks.setdefault(event, [])
-    if not hook_exists(event_hooks, command):
-        event_hooks.append({
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": command
-                }
-            ]
-        })
-
-# Signal attention when Claude stops (waiting for input) or needs permission
-add_hook("Stop", signal_cmd)
-add_hook("PermissionRequest", signal_cmd)
-
-# Clear attention when user submits a prompt, a tool executes (permission was granted), or session ends
-add_hook("UserPromptSubmit", clear_cmd)
-add_hook("PostToolUse", clear_cmd)
-add_hook("SessionEnd", clear_cmd)
-
-with open(settings_path, "w") as f:
-    json.dump(settings, f, indent=2)
-    f.write("\n")
-
-print("  Hooks configured in ~/.claude/settings.json")
-PYEOF
+python3 "$SCRIPT_DIR/scripts/configure_hooks.py"
 
 # 5. Set up LaunchAgent and start
 echo "[5/5] Setting up auto-start..."
 
 ESCAPED_BIN_PATH="$(xml_escape "$BIN_DIR/claude-notification")"
+ESCAPED_PLIST_LABEL="$(xml_escape "$PLIST_LABEL")"
 
 cat > "$PLIST_PATH" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -140,7 +98,7 @@ cat > "$PLIST_PATH" << EOF
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>$PLIST_LABEL</string>
+    <string>$ESCAPED_PLIST_LABEL</string>
     <key>ProgramArguments</key>
     <array>
         <string>$ESCAPED_BIN_PATH</string>
@@ -159,7 +117,6 @@ launchctl bootout gui/$(id -u)/$PLIST_LABEL 2>/dev/null || \
 
 # Kill any lingering process (match full binary path to avoid false positives)
 pkill -f "$INSTALL_DIR/bin/claude-notification" 2>/dev/null || true
-rm -f "$INSTALL_DIR/.lock"
 sleep 0.5
 
 # Start

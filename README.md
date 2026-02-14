@@ -55,7 +55,7 @@ Copies `signal-attention.sh` and `clear-attention.sh` into `~/.claude-notificati
 
 ### 3. Compile the menu bar app
 
-Compiles `ClaudeNotification.swift` into `~/.claude-notification/bin/claude-notification` using `swiftc`. Embeds an `Info.plist` with `LSUIElement=true` so the app runs as a menu bar–only agent (no Dock icon).
+Compiles the Swift sources in `sources/` into `~/.claude-notification/bin/claude-notification` using `swiftc`. Embeds an `Info.plist` with `LSUIElement=true` so the app runs as a menu bar–only agent (no Dock icon).
 
 ### 4. Configure Claude Code hooks
 
