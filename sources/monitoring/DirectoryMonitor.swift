@@ -2,6 +2,7 @@ import Foundation
 
 class DirectoryMonitor {
     var onChange: (() -> Void)?
+    var onRetry: (() -> Void)?
 
     private let path: String
     private var source: DispatchSourceFileSystemObject?
@@ -53,6 +54,7 @@ class DirectoryMonitor {
         NSLog("[claude-notification] Directory not available, retry %d/%d in %.0fs",
               retryCount, maxRetries, delay)
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.onRetry?()
             self?.start()
         }
     }

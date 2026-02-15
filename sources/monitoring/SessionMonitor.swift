@@ -6,7 +6,6 @@ class SessionMonitor {
     let store: SessionStore
 
     private let directoryMonitor: DirectoryMonitor
-    private let processWatcher = ProcessWatcher()
     private let processLock: ProcessLock
     private var cleanupTimer: Timer?
 
@@ -37,25 +36,21 @@ class SessionMonitor {
         processLock.release()
     }
 
-    /// Start directory monitoring, process watchers, and cleanup timer.
+    /// Start directory monitoring, cleanup timer, and begin monitoring.
     func start() {
-        directoryMonitor.onChange = { [weak self] in
-            guard let self = self else { return }
-            self.processWatcher.refresh(pids: self.store.activePIDMap(), store: self.store)
-            self.onStateChange?()
+        directoryMonitor.onRetry = { [weak self] in
+            self?.store.ensureDirectories()
         }
 
-        processWatcher.onChange = { [weak self] in
+        directoryMonitor.onChange = { [weak self] in
             self?.onStateChange?()
         }
 
         directoryMonitor.start()
-        processWatcher.refresh(pids: store.activePIDMap(), store: store)
 
         cleanupTimer = Timer.scheduledTimer(withTimeInterval: Constants.cleanupInterval, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.store.cleanup()
-            self.processWatcher.refresh(pids: self.store.activePIDMap(), store: self.store)
             self.onStateChange?()
         }
     }
@@ -64,7 +59,6 @@ class SessionMonitor {
     func stop() {
         cleanupTimer?.invalidate()
         cleanupTimer = nil
-        processWatcher.stop()
         directoryMonitor.stop()
     }
 

@@ -50,23 +50,6 @@ class SessionStore {
         sessionFiles().count
     }
 
-    /// Build a map of pid to full file path for all session files.
-    func activePIDMap() -> [pid_t: String] {
-        var map: [pid_t: String] = [:]
-        for file in sessionFiles() {
-            let path = (sessionDir as NSString).appendingPathComponent(file)
-            if let record = parseSessionFile(atPath: path) {
-                map[record.pid] = path
-            }
-        }
-        return map
-    }
-
-    /// Check if a process no longer exists.
-    func isProcessDead(_ pid: pid_t) -> Bool {
-        kill(pid, 0) != 0 && errno == ESRCH
-    }
-
     /// Remove session files that are no longer valid.
     func cleanup() {
         let now = Date().timeIntervalSince1970
@@ -92,7 +75,7 @@ class SessionStore {
     /// Determine if a session file is stale: dead process, expired timestamp, or old modification date.
     private func isSessionStale(atPath path: String, now: TimeInterval) -> Bool {
         if let record = parseSessionFile(atPath: path) {
-            if isProcessDead(record.pid) { return true }
+            if kill(record.pid, 0) != 0 && errno == ESRCH { return true }
             if let ts = record.timestamp, now - ts > Constants.staleThreshold { return true }
         }
         return isFileOlderThanThreshold(atPath: path, now: now)
