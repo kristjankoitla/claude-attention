@@ -44,6 +44,8 @@ if ! swiftc -O -o "$BIN_DIR/claude-notification" \
     echo "Error: Swift compilation failed. Check the output above for details."
     exit 1
 fi
+chmod 700 "$BIN_DIR/claude-notification"
+codesign -s - -f "$BIN_DIR/claude-notification" 2>/dev/null || true
 
 # 4. Configure Claude Code hooks
 echo "[4/5] Configuring Claude Code hooks..."
