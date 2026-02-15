@@ -3,13 +3,12 @@ import AppKit
 class StatusBarController: NSObject, NSMenuDelegate {
     private lazy var statusItem: NSStatusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let monitor = SessionMonitor()
+    private let animation = AnimationController()
     private var displayedCount = -1
-    private var animationTimer: Timer?
-    private var animationStep = 0
-    private var wasAttention = false
 
     private lazy var cachedIdleIcon: NSImage = IconRenderer.makeIdleIcon()
 
+    /// Initialize directories, acquire the single-instance lock, wire up callbacks, and begin monitoring.
     func start() {
         monitor.ensureDirectories()
 
@@ -21,6 +20,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
         setupStatusItem()
 
+        animation.onFrame = { [weak self] image in
+            self?.statusItem.button?.image = image
+        }
+        animation.onComplete = { [weak self] in
+            self?.updateDisplay()
+        }
+
         monitor.onStateChange = { [weak self] in
             self?.updateState()
         }
@@ -31,6 +37,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         NSLog("[claude-notification] Started")
     }
 
+    /// Tear down monitoring and release the process lock.
     func stop() {
         monitor.stopCleanupTimer()
         monitor.stopMonitor()
@@ -40,6 +47,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Setup
 
+    /// Create the status bar menu and assign this controller as its delegate.
     private func setupStatusItem() {
         let menu = NSMenu()
         menu.delegate = self
@@ -48,47 +56,19 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - State
 
+    /// Check the current session count and trigger an animation or display update if it changed.
     private func updateState() {
         let count = monitor.activeSessionCount()
 
         if count != displayedCount {
-            let isAttention = count > 0
-            let stateChanged = isAttention != wasAttention
             displayedCount = count
-
-            if stateChanged {
-                wasAttention = isAttention
-                animateTransition()
-            } else {
-                updateDisplay()
-            }
-        }
-    }
-
-    // MARK: - Animation
-
-    private func animateTransition() {
-        animationStep = 0
-        animationTimer?.invalidate()
-        animationTimer = Timer.scheduledTimer(withTimeInterval: Constants.animationFrameDuration, repeats: true) { [weak self] timer in
-            guard let self = self else { timer.invalidate(); return }
-            self.animationStep += 1
-
-            if self.animationStep >= Constants.animationSteps {
-                timer.invalidate()
-                self.animationTimer = nil
-                self.updateDisplay()
-            } else {
-                let t = CGFloat(self.animationStep) / CGFloat(Constants.animationSteps)
-                let eased = t * t * (3 - 2 * t) // smoothstep
-                self.statusItem.button?.image = IconRenderer.makeAnimationFrame(
-                    toAttention: self.displayedCount > 0, progress: eased)
-            }
+            animation.animate(toAttention: count > 0)
         }
     }
 
     // MARK: - Display
 
+    /// Set the status bar icon and tooltip to reflect the current session count.
     private func updateDisplay() {
         statusItem.button?.attributedTitle = NSAttributedString(string: "")
         if displayedCount <= 0 {
@@ -102,6 +82,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu Delegate
 
+    /// Build the dropdown menu with a status line and quit option each time it opens.
     func menuWillOpen(_ menu: NSMenu) {
         menu.removeAllItems()
 
@@ -119,6 +100,7 @@ class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(quitItem)
     }
 
+    /// Terminate the application when the user clicks Quit.
     @objc private func quitApp() {
         NSApplication.shared.terminate(nil)
     }

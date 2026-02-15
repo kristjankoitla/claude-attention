@@ -1,30 +1,35 @@
 #!/bin/bash
 # Called by Claude Code hooks (Stop, PermissionRequest) to signal that a session needs attention.
 # Reads JSON from stdin to extract session_id, creates a session file with PID and timestamp.
-umask 077
-SESSION_DIR="$HOME/.claude-notification/sessions"
-install -d -m 700 "$HOME/.claude-notification" "$SESSION_DIR"
-INPUT=$(cat)
-SESSION_ID=$(printf '%s' "$INPUT" | tr '\n' ' ' | sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p')
-# Sanitize: only allow safe filename characters to prevent path traversal
-SESSION_ID=$(printf '%s' "$SESSION_ID" | tr -cd 'a-zA-Z0-9_-')
+source "$(dirname "$0")/common.sh"
+
+# Get the parent PID of a given process.
+get_parent_pid() {
+    ps -p "$1" -o ppid= 2>/dev/null | tr -d ' '
+}
+
+# Check whether a process's command name contains "node".
+is_node_process() {
+    case "$(ps -p "$1" -o comm= 2>/dev/null)" in
+        *node*) return 0 ;;
+    esac
+    return 1
+}
 
 # Find the Claude Code (node) process by walking up the process tree.
-# $PPID may be a short-lived intermediary shell that exits immediately,
-# so we search ancestors for a "node" process which is the actual Claude Code runtime.
+# $PPID may be a short-lived intermediary shell, so we search ancestors
+# for a "node" process which is the actual Claude Code runtime.
 find_claude_pid() {
     local pid=$PPID
-    local max_depth=10
-    while [ "$max_depth" -gt 0 ] && [ "$pid" -gt 1 ]; do
-        local comm
-        comm=$(ps -p "$pid" -o comm= 2>/dev/null) || break
-        case "$comm" in
-            *node*) echo "$pid"; return ;;
-        esac
-        pid=$(ps -p "$pid" -o ppid= 2>/dev/null | tr -d ' ') || break
-        max_depth=$((max_depth - 1))
+    local depth=10
+    while [ "$depth" -gt 0 ] && [ "$pid" -gt 1 ]; do
+        if is_node_process "$pid"; then
+            echo "$pid"
+            return
+        fi
+        pid=$(get_parent_pid "$pid") || break
+        depth=$((depth - 1))
     done
-    # Fallback: use PPID even if we couldn't find a node process
     echo "$PPID"
 }
 

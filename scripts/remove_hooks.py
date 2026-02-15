@@ -1,42 +1,47 @@
 #!/usr/bin/env python3
 """Remove claude-notification hooks from Claude Code settings."""
-import json
 import os
 import sys
 
-settings_path = os.path.expanduser("~/.claude/settings.json")
-if not os.path.exists(settings_path):
-    sys.exit(0)
+sys.path.insert(0, os.path.dirname(__file__))
+from settings_utils import load_settings, save_settings, SETTINGS_PATH
 
-with open(settings_path) as f:
-    try:
-        settings = json.load(f)
-    except json.JSONDecodeError:
-        sys.exit(0)
 
-hooks = settings.get("hooks", {})
-modified = False
+def remove_matching_hooks(hooks):
+    """Strip all hooks whose command contains 'claude-notification'. Returns True if any were removed."""
+    modified = False
+    for event in list(hooks):
+        original = hooks[event]
+        filtered = []
+        for group in original:
+            kept = [h for h in group.get("hooks", [])
+                    if "claude-notification" not in h.get("command", "")]
+            if kept:
+                filtered.append({**group, "hooks": kept})
+        if len(filtered) != len(original):
+            modified = True
+            if filtered:
+                hooks[event] = filtered
+            else:
+                del hooks[event]
+    return modified
 
-for event in list(hooks.keys()):
-    original = hooks[event]
-    filtered = []
-    for group in original:
-        clean_hooks = [h for h in group.get("hooks", [])
-                       if "claude-notification" not in h.get("command", "")]
-        if clean_hooks:
-            group["hooks"] = clean_hooks
-            filtered.append(group)
-    if len(filtered) != len(original):
-        modified = True
-        if filtered:
-            hooks[event] = filtered
-        else:
-            del hooks[event]
 
-if modified:
-    with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
-        f.write("\n")
-    print("  Hooks removed from ~/.claude/settings.json")
-else:
-    print("  No hooks to remove")
+def main():
+    if not os.path.exists(SETTINGS_PATH):
+        return
+
+    settings = load_settings()
+    if not settings:
+        return
+
+    hooks = settings.get("hooks", {})
+    if remove_matching_hooks(hooks):
+        save_settings(settings)
+        print("  Hooks removed from ~/.claude/settings.json")
+    else:
+        print("  No hooks to remove")
+
+
+if __name__ == "__main__":
+    main()
