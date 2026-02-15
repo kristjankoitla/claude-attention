@@ -141,8 +141,8 @@ class SessionMonitor {
     /// Determine if a session file is stale: dead process, expired timestamp, or old modification date.
     private func isSessionStale(atPath path: String, now: TimeInterval) -> Bool {
         if let record = parseSessionFile(atPath: path) {
-            return isProcessDead(record.pid)
-                || record.timestamp.map({ now - $0 > Constants.staleThreshold }) ?? false
+            if isProcessDead(record.pid) { return true }
+            if let ts = record.timestamp, now - ts > Constants.staleThreshold { return true }
         }
         return isFileOlderThanThreshold(atPath: path, now: now)
     }

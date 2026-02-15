@@ -2,10 +2,7 @@
 # Pre-install validation for claude-notification.
 # Sourced by install.sh — exits on failure.
 
-if [[ "$(uname)" != "Darwin" ]]; then
-    echo "Error: This tool requires macOS."
-    exit 1
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/require_macos.sh"
 
 if ! command -v swiftc &>/dev/null; then
     echo "Error: swiftc not found. Install Xcode Command Line Tools:"

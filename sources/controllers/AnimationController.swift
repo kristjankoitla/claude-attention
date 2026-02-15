@@ -11,6 +11,8 @@ class AnimationController {
     /// Run a smoothstep transition between idle and attention states, or complete immediately if unchanged.
     func animate(toAttention: Bool) {
         guard toAttention != wasAttention else {
+            timer?.invalidate()
+            timer = nil
             onComplete?()
             return
         }

@@ -1,14 +1,11 @@
 #!/bin/bash
 set -e
 
-if [[ "$(uname)" != "Darwin" ]]; then
-    echo "Error: This tool requires macOS."
-    exit 1
-fi
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/scripts/require_macos.sh"
 
 echo "Uninstalling Claude Notification..."
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PLIST_LABEL="com.claude.notification"
 PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 

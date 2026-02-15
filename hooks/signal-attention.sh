@@ -1,7 +1,7 @@
 #!/bin/bash
 # Called by Claude Code hooks (Stop, PermissionRequest) to signal that a session needs attention.
 # Reads JSON from stdin to extract session_id, creates a session file with PID and timestamp.
-source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/common.sh" || { echo "Error: common.sh not found" >&2; exit 1; }
 
 # Get the parent PID of a given process.
 get_parent_pid() {

@@ -33,6 +33,7 @@ def main():
 
     settings = load_settings()
     if not settings:
+        print("  No hooks to remove")
         return
 
     hooks = settings.get("hooks", {})

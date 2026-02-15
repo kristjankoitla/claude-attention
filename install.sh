@@ -15,10 +15,6 @@ SCRIPTS_DIR="$INSTALL_DIR/scripts"
 PLIST_LABEL="com.claude.notification"
 PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 
-xml_escape() {
-    printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g; s/"/\&quot;/g'
-}
-
 # 1. Create directories
 echo "[1/5] Creating directories..."
 mkdir -p "$BIN_DIR" "$HOOKS_DIR" "$SCRIPTS_DIR"
@@ -56,9 +52,9 @@ python3 "$SCRIPT_DIR/scripts/configure_hooks.py"
 
 # 5. Set up LaunchAgent and start
 echo "[5/5] Setting up auto-start..."
-sed -e "s|%%LABEL%%|$(xml_escape "$PLIST_LABEL")|g" \
-    -e "s|%%BINARY_PATH%%|$(xml_escape "$BIN_DIR/claude-notification")|g" \
-    "$SCRIPT_DIR/resources/LaunchAgent.plist" > "$PLIST_PATH"
+python3 "$SCRIPT_DIR/scripts/render_template.py" "$SCRIPT_DIR/resources/LaunchAgent.plist" \
+    "%%LABEL%%" "$PLIST_LABEL" \
+    "%%BINARY_PATH%%" "$BIN_DIR/claude-notification" > "$PLIST_PATH"
 
 launchctl bootout gui/$(id -u)/$PLIST_LABEL 2>/dev/null || \
     launchctl unload "$PLIST_PATH" 2>/dev/null || true
