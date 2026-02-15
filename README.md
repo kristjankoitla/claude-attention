@@ -1,83 +1,183 @@
 # Claude Notification
 
-A macOS menu bar plugin for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that shows how many terminal sessions are waiting for your input.
+A macOS menu bar indicator for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that shows how many terminal sessions are waiting for your input.
 
-When Claude finishes a response or needs permission to use a tool, a counter appears in your menu bar. When you respond, the counter goes back down. This lets you run multiple Claude Code sessions across different terminals and know at a glance which ones need attention — without checking each tab.
+## Table of Contents
 
-## How it works
+- [Introduction](#introduction)
+- [What Exactly Does It Do](#what-exactly-does-it-do)
+- [Install & Uninstall](#install--uninstall)
+  - [Prerequisites](#prerequisites)
+  - [Install](#install)
+  - [Uninstall](#uninstall)
+  - [Files Modified Outside This Repository](#files-modified-outside-this-repository)
+- [How It's Implemented](#how-its-implemented)
+  - [Architecture](#architecture)
+  - [Hook Lifecycle](#hook-lifecycle)
+  - [Session Files](#session-files)
+  - [Cleanup](#cleanup)
+  - [Single Instance Lock](#single-instance-lock)
+  - [Menu Bar Icon](#menu-bar-icon)
 
-The plugin has two parts:
+## Introduction
 
-1. **Menu bar app** — A compiled Swift binary that watches a directory and displays a count in the macOS status bar.
-2. **Shell hooks** — Bash scripts triggered by Claude Code's hook system that create and remove files in that directory.
+If you run multiple Claude Code sessions across different terminals, there's no built-in way to know which ones are waiting for you. You end up cycling through tabs to check.
 
-Each Claude Code session gets a file in `~/.claude-notification/sessions/` when it needs attention. The menu bar app monitors that directory and displays the file count as a Roman numeral inside a sparkle icon. When no sessions need attention, it shows a plain sparkle.
+Claude Notification solves this with a single icon in your menu bar. A sparkle shows up when any session needs attention, with a Roman numeral count inside it. When you respond, the count goes back down. At a glance, you know whether anything is waiting.
 
-## Prerequisites
+It installs in one command, starts automatically on login, and removes cleanly.
+
+## What Exactly Does It Do
+
+The tool has two halves:
+
+1. **Shell hooks** that Claude Code calls automatically when events happen (response finished, permission needed, user replied). These create and delete small files in a shared directory — one file per session that needs attention.
+
+2. **A menu bar app** (compiled Swift) that watches that directory and renders a count in the macOS status bar.
+
+The icon has three states:
+
+| State | Icon | Meaning |
+|-------|------|---------|
+| Idle | Thin 4-pointed sparkle | No sessions need input |
+| Attention | Fat sparkle with Roman numeral (I, II, III, ...) | N sessions are waiting |
+| Transition | Rotating, morphing sparkle | Animating between states (~0.67s) |
+
+When you click the icon, a dropdown shows the status in plain text and a Quit option.
+
+## Install & Uninstall
+
+### Prerequisites
 
 - macOS
-- Xcode Command Line Tools (`xcode-select --install`)
+- Xcode Command Line Tools — `xcode-select --install`
 - Python 3 (included with Xcode CLT)
 - Claude Code
 
-## Install
+### Install
 
 ```
 ./install.sh
 ```
 
-This single command does everything — no manual configuration needed.
+One command. No manual configuration. The installer:
 
-## Uninstall
+1. **Creates directories** — `~/.claude-notification/{bin,hooks,scripts,sessions}`
+2. **Copies hook scripts** — `signal-attention.sh` and `clear-attention.sh` into the hooks directory
+3. **Compiles the Swift app** — builds `sources/` into a single binary at `~/.claude-notification/bin/claude-notification`, then restricts it to owner-only access and ad-hoc codesigns it
+4. **Configures Claude Code** — adds hook entries to `~/.claude/settings.json` (existing settings are preserved)
+5. **Sets up auto-start** — creates a LaunchAgent at `~/Library/LaunchAgents/com.claude.notification.plist` and starts the app immediately
+
+### Uninstall
 
 ```
 ./uninstall.sh
 ```
 
-Removes all installed files, the LaunchAgent, and the hooks from Claude Code settings. Leaves no traces.
+Stops the app, removes the hooks from Claude Code settings, deletes the LaunchAgent, and removes `~/.claude-notification/`. Leaves no traces.
 
-## What the installer does
+### Files Modified Outside This Repository
 
-The installer performs five steps:
+| File | Change | Reverted on uninstall |
+|------|--------|-----------------------|
+| `~/.claude/settings.json` | Adds hook entries for 5 Claude Code events | Yes |
+| `~/Library/LaunchAgents/com.claude.notification.plist` | LaunchAgent for auto-start | Yes (deleted) |
+| `~/.claude-notification/` | Installation directory | Yes (deleted) |
 
-### 1. Create directories
+## How It's Implemented
+
+### Architecture
 
 ```
-~/.claude-notification/
-├── bin/            # Compiled binary
-├── hooks/          # Hook scripts
-└── sessions/       # Session files (mode 700)
+┌─────────────────────────────────────────────────────────┐
+│ Claude Code (terminal)                                  │
+│                                                         │
+│  Event fires ──► Hook script runs                       │
+│                    │                                    │
+│                    ├─ signal-attention.sh                │
+│                    │    Creates session file             │
+│                    │                                    │
+│                    └─ clear-attention.sh                 │
+│                         Deletes session file             │
+└────────────────────────┬────────────────────────────────┘
+                         │ filesystem
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ ~/.claude-notification/sessions/                        │
+│                                                         │
+│  <session-id-1>    ← "12345:1707000000"                 │
+│  <session-id-2>    ← "12400:1707000010"                 │
+└────────────────────────┬────────────────────────────────┘
+                         │ DispatchSource (filesystem watch)
+                         ▼
+┌─────────────────────────────────────────────────────────┐
+│ Menu bar app (Swift)                                    │
+│                                                         │
+│  SessionMonitor ──► count files ──► AnimationController  │
+│                                          │              │
+│  Cleanup timer                    IconRenderer           │
+│  (every 10s)                      SparkleShape           │
+│                                   GlyphPath              │
+│                                          │              │
+│                                          ▼              │
+│                                    NSStatusBar icon      │
+└─────────────────────────────────────────────────────────┘
 ```
 
-### 2. Install hook scripts
+The project has no external dependencies. The Swift app uses only AppKit, Foundation, and CoreText. The hooks use only standard POSIX tools. The installer uses Python 3 (stdlib only) for JSON manipulation and template rendering.
 
-Copies `signal-attention.sh` and `clear-attention.sh` into `~/.claude-notification/hooks/` and makes them executable.
+**Source layout:**
 
-### 3. Compile the menu bar app
+```
+hooks/
+  common.sh                  Shared setup: read stdin, extract and sanitize session_id
+  signal-attention.sh        Create a session file (Stop, PermissionRequest)
+  clear-attention.sh         Delete a session file (UserPromptSubmit, PostToolUse, SessionEnd)
 
-Compiles the Swift sources in `sources/` into `~/.claude-notification/bin/claude-notification` using `swiftc`. Embeds an `Info.plist` with `LSUIElement=true` so the app runs as a menu bar–only agent (no Dock icon).
+scripts/
+  preflight.sh               Pre-install checks (macOS, swiftc, python3)
+  require_macos.sh            Platform guard
+  settings_utils.py           Atomic JSON read/write for ~/.claude/settings.json
+  configure_hooks.py          Add hook entries to Claude Code settings
+  remove_hooks.py             Remove hook entries from Claude Code settings
+  render_template.py          Substitute placeholders in the LaunchAgent plist template
 
-### 4. Configure Claude Code hooks
+sources/
+  main.swift                  Entry point — NSApplication in accessory mode
+  AppDelegate.swift           Lifecycle — start/stop the controller
+  Constants.swift             Icon size, animation timing, cleanup interval
 
-Adds hook entries to `~/.claude/settings.json`. If the file exists with other settings, they are preserved — only the notification hooks are added. If the file has invalid JSON, it is backed up before being replaced.
+  controllers/
+    StatusBarController.swift  Menu bar item, state management, menu delegate
+    AnimationController.swift  Smoothstep transition between idle/attention icons
 
-The following hooks are registered:
+  monitoring/
+    SessionMonitor.swift       Directory watching, cleanup timer, session counting
+    ProcessLock.swift           flock-based single-instance lock
 
-| Claude Code Event    | Script                | Effect                        |
-|----------------------|-----------------------|-------------------------------|
-| `Stop`               | `signal-attention.sh` | Claude finished — needs input |
-| `PermissionRequest`  | `signal-attention.sh` | Claude needs permission       |
-| `PostToolUse`        | `clear-attention.sh`  | Tool ran — permission handled |
-| `UserPromptSubmit`   | `clear-attention.sh`  | User sent a prompt            |
-| `SessionEnd`         | `clear-attention.sh`  | Session closed                |
+  rendering/
+    IconRenderer.swift          Compose sparkle + glyph into menu bar icons
+    SparkleShape.swift          4-pointed star geometry
+    GlyphPath.swift             CoreText text-to-outline conversion
 
-### 5. Set up LaunchAgent
+resources/
+  Info.plist                   App bundle metadata (LSUIElement for menu-bar-only)
+  LaunchAgent.plist            Template for the launchd plist
+```
 
-Creates a `launchd` plist at `~/Library/LaunchAgents/com.claude.notification.plist` so the menu bar app starts automatically on login. Stops any previously running instance before starting.
+### Hook Lifecycle
 
-## Hook lifecycle
+Five Claude Code events are hooked:
 
-A typical session flows like this:
+| Event | Script | Effect |
+|-------|--------|--------|
+| `Stop` | `signal-attention.sh` | Claude finished responding — needs input |
+| `PermissionRequest` | `signal-attention.sh` | Claude needs tool permission |
+| `PostToolUse` | `clear-attention.sh` | Tool executed — permission was handled |
+| `UserPromptSubmit` | `clear-attention.sh` | User sent a prompt |
+| `SessionEnd` | `clear-attention.sh` | Session closed |
+
+A typical flow:
 
 ```
 User sends prompt
@@ -107,43 +207,39 @@ User reads response and types next prompt
   → counter goes DOWN
 ```
 
-With multiple terminals, each session independently creates and removes its own file, so the counter reflects the total number of sessions that need attention at any moment.
+With multiple terminals, each session independently manages its own file. The counter reflects the total across all sessions.
 
-## Session files
+### Session Files
 
-Each session file is stored at `~/.claude-notification/sessions/<session-id>` and contains:
+Each session file lives at `~/.claude-notification/sessions/<session-id>` and contains:
 
 ```
 <pid>:<unix-timestamp>
 ```
 
-- **pid** — The Claude Code process ID (used by the cleanup timer to detect dead sessions)
-- **timestamp** — When the attention signal was created (used for staleness checks)
+- **pid** — the Claude Code (Node) process ID, found by walking up the process tree from the hook script. Used to detect dead sessions.
+- **timestamp** — when the attention signal was created. Used for staleness checks.
 
-Session IDs are sanitized to `[a-zA-Z0-9_-]` to prevent path traversal.
+Session IDs are sanitized to `[a-zA-Z0-9_-]` only, preventing path traversal. Files are created atomically via `mktemp` + `mv`. The session directory has mode `700` and hooks run with `umask 077`.
 
-## Cleanup
+### Cleanup
 
-The menu bar app runs a cleanup timer every 10 seconds that removes stale session files:
+The menu bar app runs a cleanup timer every 10 seconds. A session file is removed if any of these are true:
 
-1. **Dead process** — If the PID in the file no longer exists (`kill -0` returns `ESRCH`), the file is removed.
-2. **Stale timestamp** — If the timestamp in the file is older than 15 minutes, the file is removed.
-3. **Old file fallback** — If the file's modification date is older than 15 minutes, the file is removed.
+1. **Dead process** — the PID in the file no longer exists (`kill(pid, 0)` returns `ESRCH`)
+2. **Stale timestamp** — the timestamp in the file is older than 15 minutes
+3. **Old file fallback** — the file's modification date is older than 15 minutes (covers files with missing or unparseable content)
 
-## Files modified outside this repository
+### Single Instance Lock
 
-| File | Change | Reverted on uninstall |
-|------|--------|-----------------------|
-| `~/.claude/settings.json` | Adds hook entries for 5 Claude Code events | Yes |
-| `~/Library/LaunchAgents/com.claude.notification.plist` | Adds a LaunchAgent for auto-start | Yes (deleted) |
-| `~/.claude-notification/` | Created as the installation directory | Yes (deleted) |
+The app acquires an exclusive non-blocking file lock (`flock(LOCK_EX | LOCK_NB)`) on `~/.claude-notification/.lock` at startup. If another instance is already running, the new one logs a message and exits immediately.
 
-## Single instance
+### Menu Bar Icon
 
-The app uses a file lock at `~/.claude-notification/.lock` with `flock(LOCK_EX | LOCK_NB)` to ensure only one instance runs at a time. If another instance is already running, the new one exits immediately.
+The icon is an 18x18 template image (adapts to light/dark mode automatically):
 
-## Menu bar icon
+- **Idle**: a 4-pointed sparkle with thin inner points (`innerRatio: 0.35`)
+- **Attention**: a fatter sparkle (`innerRatio: 0.65`) with a Roman numeral glyph cut out of the center using even-odd fill. Counts above 10 display as "X+".
+- **Transition**: 40 frames over ~0.67 seconds. The sparkle rotates 180 degrees and morphs between the two shapes using smoothstep interpolation (`t * t * (3 - 2t)`).
 
-- **Idle** (no sessions waiting): A 4-pointed sparkle outline
-- **Attention** (N sessions waiting): A fatter sparkle with a Roman numeral (I, II, III, ...) cut out of it
-- **Transitions**: Animated over ~0.67 seconds with a smoothstep easing — the sparkle rotates and morphs between the idle and attention shapes
+The numeral is rendered as glyph outlines via CoreText (`CTFontCreatePathForGlyph`), not as text, so it scales cleanly and can be subtracted from the sparkle shape.
