@@ -32,15 +32,13 @@ class StatusBarController: NSObject, NSMenuDelegate {
         }
 
         updateState()
-        monitor.startMonitor()
-        monitor.startCleanupTimer()
+        monitor.start()
         NSLog("[claude-notification] Started")
     }
 
     /// Tear down monitoring and release the process lock.
     func stop() {
-        monitor.stopCleanupTimer()
-        monitor.stopMonitor()
+        monitor.stop()
         monitor.releaseLock()
         NSLog("[claude-notification] Stopped")
     }

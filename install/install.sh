@@ -2,6 +2,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/scripts/preflight.sh"
 
 echo "Installing Claude Notification..."
@@ -22,9 +23,9 @@ mkdir -p -m 700 "$SESSION_DIR"
 
 # 2. Install hook scripts and Python helpers
 echo "[2/5] Installing hook scripts..."
-cp "$SCRIPT_DIR/hooks/common.sh" "$HOOKS_DIR/common.sh"
-cp "$SCRIPT_DIR/hooks/signal-attention.sh" "$HOOKS_DIR/signal-attention.sh"
-cp "$SCRIPT_DIR/hooks/clear-attention.sh" "$HOOKS_DIR/clear-attention.sh"
+cp "$REPO_DIR/hooks/common.sh" "$HOOKS_DIR/common.sh"
+cp "$REPO_DIR/hooks/signal-attention.sh" "$HOOKS_DIR/signal-attention.sh"
+cp "$REPO_DIR/hooks/clear-attention.sh" "$HOOKS_DIR/clear-attention.sh"
 chmod +x "$HOOKS_DIR/common.sh" "$HOOKS_DIR/signal-attention.sh" "$HOOKS_DIR/clear-attention.sh"
 cp "$SCRIPT_DIR/scripts/settings_utils.py" "$SCRIPTS_DIR/settings_utils.py"
 cp "$SCRIPT_DIR/scripts/configure_hooks.py" "$SCRIPTS_DIR/configure_hooks.py"
@@ -33,10 +34,10 @@ cp "$SCRIPT_DIR/scripts/remove_hooks.py" "$SCRIPTS_DIR/remove_hooks.py"
 # 3. Compile Swift app
 echo "[3/5] Compiling menu bar app..."
 if ! swiftc -O -o "$BIN_DIR/claude-notification" \
-    "$SCRIPT_DIR"/sources/*.swift \
-    "$SCRIPT_DIR"/sources/controllers/*.swift \
-    "$SCRIPT_DIR"/sources/rendering/*.swift \
-    "$SCRIPT_DIR"/sources/monitoring/*.swift \
+    "$REPO_DIR"/sources/*.swift \
+    "$REPO_DIR"/sources/controllers/*.swift \
+    "$REPO_DIR"/sources/rendering/*.swift \
+    "$REPO_DIR"/sources/monitoring/*.swift \
     -framework AppKit \
     -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist \
     -Xlinker "$SCRIPT_DIR/resources/Info.plist" 2>&1; then
@@ -75,4 +76,4 @@ echo ""
 echo "  The icon updates automatically via Claude Code hooks."
 echo "  Starts automatically on login."
 echo ""
-echo "  To uninstall: ./uninstall.sh"
+echo "  To uninstall: ./install/uninstall.sh"

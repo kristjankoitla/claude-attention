@@ -57,7 +57,7 @@ When you click the icon, a dropdown shows the status in plain text and a Quit op
 ### Install
 
 ```
-./install.sh
+./install/install.sh
 ```
 
 One command. No manual configuration. The installer:
@@ -71,7 +71,7 @@ One command. No manual configuration. The installer:
 ### Uninstall
 
 ```
-./uninstall.sh
+./install/uninstall.sh
 ```
 
 Stops the app, removes the hooks from Claude Code settings, deletes the LaunchAgent, and removes `~/.claude-notification/`. Leaves no traces.
@@ -134,14 +134,6 @@ hooks/
   signal-attention.sh        Create a session file (Stop, PermissionRequest)
   clear-attention.sh         Delete a session file (UserPromptSubmit, PostToolUse, SessionEnd)
 
-scripts/
-  preflight.sh               Pre-install checks (macOS, swiftc, python3)
-  require_macos.sh            Platform guard
-  settings_utils.py           Atomic JSON read/write for ~/.claude/settings.json
-  configure_hooks.py          Add hook entries to Claude Code settings
-  remove_hooks.py             Remove hook entries from Claude Code settings
-  render_template.py          Substitute placeholders in the LaunchAgent plist template
-
 sources/
   main.swift                  Entry point — NSApplication in accessory mode
   AppDelegate.swift           Lifecycle — start/stop the controller
@@ -152,7 +144,10 @@ sources/
     AnimationController.swift  Smoothstep transition between idle/attention icons
 
   monitoring/
-    SessionMonitor.swift       Directory watching, cleanup timer, session counting
+    SessionMonitor.swift       Orchestrator — wires sub-components together
+    SessionStore.swift          Session file I/O, staleness logic, cleanup
+    DirectoryMonitor.swift      Filesystem watcher with retry/backoff
+    ProcessWatcher.swift        PID exit watcher via kqueue
     ProcessLock.swift           flock-based single-instance lock
 
   rendering/
@@ -160,9 +155,19 @@ sources/
     SparkleShape.swift          4-pointed star geometry
     GlyphPath.swift             CoreText text-to-outline conversion
 
-resources/
-  Info.plist                   App bundle metadata (LSUIElement for menu-bar-only)
-  LaunchAgent.plist            Template for the launchd plist
+install/
+  install.sh                   Install script — compile, configure hooks, set up LaunchAgent
+  uninstall.sh                 Uninstall script — stop app, remove hooks, delete files
+  scripts/
+    preflight.sh               Pre-install checks (macOS, swiftc, python3)
+    require_macos.sh            Platform guard
+    settings_utils.py           Atomic JSON read/write for ~/.claude/settings.json
+    configure_hooks.py          Add hook entries to Claude Code settings
+    remove_hooks.py             Remove hook entries from Claude Code settings
+    render_template.py          Substitute placeholders in the LaunchAgent plist template
+  resources/
+    Info.plist                   App bundle metadata (LSUIElement for menu-bar-only)
+    LaunchAgent.plist            Template for the launchd plist
 ```
 
 ### Hook Lifecycle
