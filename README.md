@@ -21,6 +21,10 @@ A macOS menu bar indicator for [Claude Code](https://docs.anthropic.com/en/docs/
 
 ## Introduction
 
+<p align="center">
+  <img src="images/menu-bar-arrow.png" alt="Claude Notification icon in the macOS menu bar">
+</p>
+
 If you run multiple Claude Code sessions across different terminals, there's no built-in way to know which ones are waiting for you. You end up cycling through tabs to check.
 
 Claude Notification solves this with a single icon in your menu bar. A sparkle shows up when any session needs attention, with a Roman numeral count inside it. When you respond, the count goes back down. At a glance, you know whether anything is waiting.
@@ -42,6 +46,17 @@ The icon has three states:
 | Idle | Thin 4-pointed sparkle | No sessions need input |
 | Attention | Fat sparkle with Roman numeral (I, II, III, ...) | N sessions are waiting |
 | Transition | Rotating, morphing sparkle | Animating between states (~0.67s) |
+
+<p align="center">
+  <img src="images/icon-5.png" alt="5 sessions waiting" height="48">
+  &nbsp;&nbsp;
+  <img src="images/icon-3.png" alt="3 sessions waiting" height="48">
+  &nbsp;&nbsp;
+  <img src="images/icon-1.png" alt="1 session waiting" height="48">
+  &nbsp;&nbsp;
+  <img src="images/icon-idle.png" alt="Idle — no sessions waiting" height="48">
+</p>
+<p align="center"><em>Idle, 1 session, 3 sessions, 5 sessions</em></p>
 
 When you click the icon, a dropdown shows the status in plain text and a Quit option.
 
